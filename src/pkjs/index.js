@@ -251,13 +251,26 @@ function geocodeCity(city, callback) {
 }
 
 Pebble.addEventListener('showConfiguration', function(e) {
-  var html = CONFIG_HTML;
   if (Object.keys(cachedSettings).length > 0) {
     var configJson = JSON.stringify(cachedSettings);
-    html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
+    var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
+    Pebble.openURL('data:text/html,' + encodeURIComponent(html));
+  } else {
+    var d = {}; d['28'] = 1;
+    Pebble.sendAppMessage(d);
+    var poll = setInterval(function() {
+      if (Object.keys(cachedSettings).length > 0) {
+        clearInterval(poll); clearTimeout(fallback);
+        var configJson = JSON.stringify(cachedSettings);
+        var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
+        Pebble.openURL('data:text/html,' + encodeURIComponent(html));
+      }
+    }, 50);
+    var fallback = setTimeout(function() {
+      clearInterval(poll);
+      Pebble.openURL('data:text/html,' + encodeURIComponent(CONFIG_HTML));
+    }, 3000);
   }
-  var url = 'data:text/html,' + encodeURIComponent(html);
-  Pebble.openURL(url);
 });
 
 function encodeSettings(config) {

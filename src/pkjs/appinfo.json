@@ -38,7 +38,8 @@
     "longitude": 24,
     "locationStr": 25,
     "settingsBlob": 26,
-    "requestSettings": 27
+    "requestSettings": 27,
+    "requestResend": 28
   },
   "capabilities": ["health", "configurable"],
   "resources": {

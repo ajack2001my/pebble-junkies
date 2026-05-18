@@ -61,6 +61,7 @@ enum {
   KEY_LOCATION_STR = 25,
   KEY_SETTINGS_BLOB = 26,
   KEY_REQUEST_SETTINGS = 27,
+  KEY_REQUEST_RESEND = 28,
 };
 
 typedef struct __attribute__((__packed__)) {
@@ -616,6 +617,11 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   if (t && t->length == sizeof(Settings)) {
     memcpy(&s_settings, t->value->data, sizeof(Settings));
     s_settings.version = SETTINGS_VERSION;
+  }
+
+  t = dict_find(iter, KEY_REQUEST_RESEND);
+  if (t) {
+    send_settings_with_blob();
   }
 
   save_settings();
