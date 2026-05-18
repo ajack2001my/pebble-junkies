@@ -62,10 +62,10 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '<div class="col"><label>Longitude</label><input type="number" id="longitude" step="0.0001" placeholder="-0.12"></div></div>' +
 '</div>' +
 '<h2>Bottom Quadrants</h2>' +
-'<div class="row"><div class="col"><label>Top-Left</label><select id="quadTL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option></select></div>' +
-'<div class="col"><label>Top-Right</label><select id="quadTR"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option></select></div></div>' +
-'<div class="row"><div class="col"><label>Bottom-Left</label><select id="quadBL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option></select></div>' +
-'<div class="col"><label>Bottom-Right</label><select id="quadBR"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option></select></div></div>' +
+'<div class="row"><div class="col"><label>Top-Left</label><select id="quadTL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div>' +
+'<div class="col"><label>Top-Right</label><select id="quadTR"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div></div>' +
+'<div class="row"><div class="col"><label>Bottom-Left</label><select id="quadBL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div>' +
+'<div class="col"><label>Bottom-Right</label><select id="quadBR"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div></div>' +
 '<h2>Colors</h2>' +
 '<div class="row"><div class="col"><label>Foreground (day)</label><input type="color" id="fgDay" value="#ffffff"></div>' +
 '<div class="col"><label>Background (day)</label><input type="color" id="bgDay" value="#000000"></div></div>' +

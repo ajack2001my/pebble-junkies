@@ -21,7 +21,6 @@ static bool s_bluetooth_connected = true;
 
 static char s_time_text[12];
 static char s_date_text[40];
-static char s_weather_temp[10];
 
 static QuadrantData s_quads[4];
 static int16_t s_batt_pct = 100;
@@ -334,6 +333,49 @@ static void draw_quadrant(GContext *ctx, int x, int y, int w, int h, uint8_t typ
       }
       break;
     }
+    case 5: {
+      if (s_weather.valid) {
+        char tmp[12];
+        format_temp(s_weather.temp, tmp, sizeof(tmp));
+        snprintf(s_quads[index].value, sizeof(s_quads[index].value), "%s", tmp);
+        graphics_draw_text(ctx, s_quads[index].value,
+          fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+          GRect(x, y, w, 20), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+        graphics_draw_text(ctx, "temp",
+          fonts_get_system_font(FONT_KEY_GOTHIC_14),
+          GRect(x, y + 20, w, 14), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+      } else {
+        graphics_draw_text(ctx, "--",
+          fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+          GRect(x, y, w, 20), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+        graphics_draw_text(ctx, "temp",
+          fonts_get_system_font(FONT_KEY_GOTHIC_14),
+          GRect(x, y + 20, w, 14), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+      }
+      break;
+    }
+    case 6: {
+      if (s_weather.valid) {
+        draw_weather_icon(ctx, x + w/2 - 10, y + 1, 14, s_weather.condition, s_is_night);
+        char tmp[12];
+        format_temp(s_weather.temp, tmp, sizeof(tmp));
+        snprintf(s_quads[index].value, sizeof(s_quads[index].value), "%s", tmp);
+        graphics_draw_text(ctx, s_quads[index].value,
+          fonts_get_system_font(FONT_KEY_GOTHIC_14),
+          GRect(x, y + 20, w, 14), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+      } else {
+        graphics_draw_text(ctx, "--",
+          fonts_get_system_font(FONT_KEY_GOTHIC_14),
+          GRect(x + w/2 - 10, y + 8, 20, 14), GTextOverflowModeTrailingEllipsis,
+          GTextAlignmentCenter, NULL);
+      }
+      break;
+    }
   }
 }
 
@@ -374,20 +416,6 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
   graphics_draw_text(ctx, s_date_text,
     fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), date_box,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-
-  if (s_weather.valid) {
-    draw_weather_icon(ctx, 2, 72, 12, s_weather.condition, s_is_night);
-    format_temp(s_weather.temp, s_weather_temp, sizeof(s_weather_temp));
-    char weather_str[60];
-    int16_t hi = convert_temp(s_weather.temp_hi);
-    int16_t lo = convert_temp(s_weather.temp_lo);
-    snprintf(weather_str, sizeof(weather_str), "%s  H:%d L:%d",
-      s_weather_temp, hi/10, lo/10);
-    graphics_draw_text(ctx, weather_str,
-      fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(18, 72, w - 20, 12), GTextOverflowModeTrailingEllipsis,
-      GTextAlignmentLeft, NULL);
-  }
 }
 
 static void bot_layer_update(Layer *layer, GContext *ctx) {
@@ -411,10 +439,6 @@ static void bot_layer_update(Layer *layer, GContext *ctx) {
   for (int i = 0; i < 4; i++) {
     int qx = (i % 2) * qw;
     int qy = (i / 2) * qh;
-    if (i > 0) {
-      graphics_draw_line(ctx, GPoint((i % 2) * qw, qy), GPoint((i % 2) * qw, qy + qh));
-      if (i == 2) graphics_draw_line(ctx, GPoint(0, qy), GPoint(w, qy));
-    }
     if (s_quads[i].quad_id != 0) {
       draw_quadrant(ctx, qx, qy, qw, qh, s_quads[i].quad_id, i);
     }
