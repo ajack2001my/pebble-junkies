@@ -320,11 +320,14 @@ static void draw_quadrant(GContext *ctx, int x, int y, int w, int h, uint8_t typ
     }
     case 4: {
       if (s_weather.valid) {
-        draw_weather_icon(ctx, x + w/2 - 12, y + 1, 14, s_weather.condition, s_is_night);
+        int cx = x + w/2, cy = y + 6;
+        graphics_fill_circle(ctx, GPoint(cx, cy), 3);
+        graphics_draw_line(ctx, GPoint(cx, cy + 2), GPoint(cx, cy + 8));
+        graphics_draw_line(ctx, GPoint(cx - 1, cy + 5), GPoint(cx + 1, cy + 5));
         snprintf(s_quads[index].value, sizeof(s_quads[index].value), "%u%%", s_weather.precip_prob);
         graphics_draw_text(ctx, s_quads[index].value,
           fonts_get_system_font(FONT_KEY_GOTHIC_14),
-          GRect(x, y + 18, w, 14), GTextOverflowModeTrailingEllipsis,
+          GRect(x, y + 16, w, 14), GTextOverflowModeTrailingEllipsis,
           GTextAlignmentCenter, NULL);
       } else {
         graphics_draw_text(ctx, "--",
@@ -412,10 +415,10 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
       GTextAlignmentCenter, NULL);
   }
 
-  GRect date_box = GRect(4, 48, w - 8, 20);
+  GRect date_box = GRect(4, 46, w - 8, 26);
   strftime(s_date_text, sizeof(s_date_text), s_settings.date_format, localtime(&(time_t){time(NULL)}));
   graphics_draw_text(ctx, s_date_text,
-    fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), date_box,
+    fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), date_box,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 

@@ -1,17 +1,17 @@
 {
-    "author": "MakeAwesomeHappen",
+    "author": "Renegade Demo Group",
     "dependencies": {},
     "keywords": [
         "pebble-app"
     ],
-    "name": "watchface-tutorial",
+    "name": "junkies",
     "pebble": {
         "capabilities": [
             "location",
             "configurable",
             "health"
         ],
-        "displayName": "Tutorial Watchface",
+        "displayName": "Pebble Junkies",
         "enableMultiJS": true,
         "messageKeys": [],
         "projectType": "native",
