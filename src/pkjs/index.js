@@ -81,7 +81,7 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'function toggle(el){el.classList.toggle("on");var id=el.id;if(id==="toggleGps"){document.getElementById("manualLoc").style.display=el.classList.contains("on")?"none":"block"}' +
 'if(id==="toggleDayNight"){document.getElementById("nightColors").style.display=el.classList.contains("on")?"block":"none"}}' +
 'function getQueryParam(name){var match=location.search.match(new RegExp("[?&]"+name+"=([^&]*)"));return match?decodeURIComponent(match[1].replace(/\\+/g," ")):null}' +
-'function load(){try{var raw=getQueryParam("config");if(!raw)return;var cfg=JSON.parse(raw);' +
+'function load(){try{var cfg;if(typeof initialConfig!==\'undefined\'&&initialConfig){cfg=initialConfig}else{var raw=getQueryParam("config");if(!raw)return;cfg=JSON.parse(raw)}' +
 'setToggle("toggle24h",cfg.use24h);' +
 'setSelect("dateFormat",cfg.dateFormat);' +
 'setSelect("tempUnit",cfg.tempUnit);' +
@@ -123,6 +123,8 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'document.location="pebblejs://close#"+encodeURIComponent(JSON.stringify(config))}' +
 'window.onload=load<\/script></body></html>';
 
+var cachedSettings = {};
+
 var locationData = {
   lat: null,
   lon: null,
@@ -130,7 +132,8 @@ var locationData = {
 };
 
 function sendError(msg) {
-  Pebble.sendAppMessage({ error: msg });
+  var d = {}; d['9'] = msg;
+  Pebble.sendAppMessage(d);
 }
 
 function fetchWeatherFromAPI(lat, lon) {
@@ -157,16 +160,17 @@ function fetchWeatherFromAPI(lat, lon) {
         var sunsetMin = sunsetDate.getHours() * 60 + sunsetDate.getMinutes();
 
         var locName = data.timezone || locationData.name || '';
-        Pebble.sendAppMessage({
-          temp: Math.round(current.temperature_2m * 10),
-          tempHi: Math.round(daily.temperature_2m_max[0] * 10),
-          tempLo: Math.round(daily.temperature_2m_min[0] * 10),
-          condition: current.weather_code,
-          precipProb: Math.round(current.precipitation_probability || 0),
-          sunrise: sunriseMin,
-          sunset: sunsetMin,
-          locationName: locName
-        });
+        var wd = {};
+        wd['1'] = Math.round(current.temperature_2m * 10);
+        wd['2'] = Math.round(daily.temperature_2m_max[0] * 10);
+        wd['3'] = Math.round(daily.temperature_2m_min[0] * 10);
+        wd['4'] = current.weather_code;
+        wd['5'] = Math.round(current.precipitation_probability || 0);
+        wd['6'] = sunriseMin;
+        wd['7'] = sunsetMin;
+        wd['8'] = locName;
+        wd['28'] = 77;
+        Pebble.sendAppMessage(wd);
       } catch(e) {
         sendError('Parse error');
       }
@@ -205,27 +209,96 @@ function requestLocationAndFetch() {
 }
 
 Pebble.addEventListener('showConfiguration', function(e) {
-  var configStr = '';
-  try {
-    var url = 'data:text/html,' + encodeURIComponent(CONFIG_HTML);
-    Pebble.openURL(url);
-  } catch(e) {
-    Pebble.openURL('data:text/html,' + encodeURIComponent(CONFIG_HTML));
+  var html = CONFIG_HTML;
+  if (Object.keys(cachedSettings).length > 0) {
+    var configJson = JSON.stringify(cachedSettings);
+    html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
   }
+  var url = 'data:text/html,' + encodeURIComponent(html);
+  Pebble.openURL(url);
 });
 
-Pebble.addEventListener('webviewclosed', function(e) {
-  if (e.response && e.response.length > 0) {
+function encodeSettings(config) {
+  var buf = [];
+  buf.push(2); // version
+  buf.push(config.use24h ? 1 : 0);
+  var df = config.dateFormat || '';
+  for (var i = 0; i < 20; i++) buf.push(i < df.length ? df.charCodeAt(i) : 0);
+  buf.push(config.tempUnit || 0);
+  buf.push(config.quadTL || 0);
+  buf.push(config.quadTR || 0);
+  buf.push(config.quadBL || 0);
+  buf.push(config.quadBR || 0);
+  buf.push(config.fgDay || 0);
+  buf.push(config.bgDay || 0);
+  buf.push(config.useDayNight ? 1 : 0);
+  buf.push(config.fgNight || 0);
+  buf.push(config.bgNight || 0);
+  buf.push(config.useGPS ? 1 : 0);
+  var lat = config.latitude || 0;
+  buf.push(lat & 0xFF); buf.push((lat >> 8) & 0xFF);
+  buf.push((lat >> 16) & 0xFF); buf.push((lat >> 24) & 0xFF);
+  var lon = config.longitude || 0;
+  buf.push(lon & 0xFF); buf.push((lon >> 8) & 0xFF);
+  buf.push((lon >> 16) & 0xFF); buf.push((lon >> 24) & 0xFF);
+  var ln = config.locationStr || '';
+  for (var i = 0; i < 40; i++) buf.push(i < ln.length ? ln.charCodeAt(i) : 0);
+  return buf;
+}
+
+function decodeSettings(buf) {
+  var cfg = {}, pos = 0;
+  cfg.version = buf[pos++];
+  cfg.use24h = buf[pos++];
+  var df = '';
+  for (var i = 0; i < 20; i++) { var c = buf[pos++]; if (c) df += String.fromCharCode(c); }
+  cfg.dateFormat = df;
+  cfg.tempUnit = buf[pos++];
+  cfg.quadTL = buf[pos++];
+  cfg.quadTR = buf[pos++];
+  cfg.quadBL = buf[pos++];
+  cfg.quadBR = buf[pos++];
+  cfg.fgDay = buf[pos++];
+  cfg.bgDay = buf[pos++];
+  cfg.useDayNight = buf[pos++];
+  cfg.fgNight = buf[pos++];
+  cfg.bgNight = buf[pos++];
+  cfg.useGPS = buf[pos++];
+  cfg.latitude = buf[pos] | (buf[pos+1] << 8) | (buf[pos+2] << 16) | (buf[pos+3] << 24);
+  pos += 4;
+  cfg.longitude = buf[pos] | (buf[pos+1] << 8) | (buf[pos+2] << 16) | (buf[pos+3] << 24);
+  pos += 4;
+  var ln = '';
+  for (var i = 0; i < 40; i++) { var c = buf[pos++]; if (c) ln += String.fromCharCode(c); }
+  cfg.locationStr = ln;
+  return cfg;
+}
+
+    Pebble.addEventListener('webviewclosed', function(e) {
+  var response = e.response;
+  if (response && response.length > 0) {
     var config;
     try {
-      config = JSON.parse(e.response);
-    } catch(e) {
+      config = JSON.parse(response);
+    } catch(_e) {
       try {
-        config = JSON.parse(decodeURIComponent(e.response));
-      } catch(e) {
+        config = JSON.parse(decodeURIComponent(response));
+      } catch(_e2) {
         return;
       }
     }
+    for (var k in config) {
+      cachedSettings[k] = config[k];
+    }
+    setTimeout(function() {
+      var qd = {};
+      qd['13'] = config.quadTL || 0;
+      qd['14'] = config.quadTR || 0;
+      qd['15'] = config.quadBL || 0;
+      qd['16'] = config.quadBR || 0;
+      qd['26'] = encodeSettings(config);
+      Pebble.sendAppMessage(qd);
+    }, 2000);
     if (config.useGPS) {
       requestLocationAndFetch();
     } else if (config.latitude && config.longitude) {
@@ -234,16 +307,34 @@ Pebble.addEventListener('webviewclosed', function(e) {
       locationData.name = config.locationStr || '';
       fetchWeatherFromAPI(locationData.lat, locationData.lon);
     }
-    Pebble.sendAppMessage(config);
   }
 });
 
 Pebble.addEventListener('appmessage', function(e) {
-  if (e.payload && e.payload.requestWeather !== undefined) {
-    if (locationData.lat !== null && locationData.lon !== null) {
-      fetchWeatherFromAPI(locationData.lat, locationData.lon);
-    } else {
-      requestLocationAndFetch();
+  if (e.payload) {
+    if (e.payload.settingsBlob !== undefined) {
+      var cfg = decodeSettings(e.payload.settingsBlob);
+      for (var k in cfg) {
+        cachedSettings[k] = cfg[k];
+      }
+    }
+    if (e.payload.requestWeather !== undefined) {
+      if (locationData.lat !== null && locationData.lon !== null) {
+        fetchWeatherFromAPI(locationData.lat, locationData.lon);
+      } else {
+        requestLocationAndFetch();
+      }
+    }
+    if (e.payload.requestSettings !== undefined) {
+      if (Object.keys(cachedSettings).length > 0) {
+        var qd = {};
+        qd['13'] = cachedSettings.quadTL || 0;
+        qd['14'] = cachedSettings.quadTR || 0;
+        qd['15'] = cachedSettings.quadBL || 0;
+        qd['16'] = cachedSettings.quadBR || 0;
+        qd['28'] = 99;
+        Pebble.sendAppMessage(qd);
+      }
     }
   }
 });

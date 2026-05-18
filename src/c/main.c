@@ -5,10 +5,10 @@
 #define WEATHER_REFRESH_MINUTES 30
 
 typedef struct {
-  uint8_t quad_id;
+  uint8_t quad_id;     // 0=off,1=batt,2=steps,3=hr,4=rain
   char label[10];
   char value[20];
-  uint8_t icon_char;
+  uint8_t icon_char;   // simple icon marker
   bool valid;
 } QuadrantData;
 
@@ -56,6 +56,8 @@ enum {
   KEY_LATITUDE = 23,
   KEY_LONGITUDE = 24,
   KEY_LOCATION_STR = 25,
+  KEY_SETTINGS_BLOB = 26,
+  KEY_REQUEST_SETTINGS = 27,
 };
 
 typedef struct __attribute__((__packed__)) {
@@ -141,10 +143,10 @@ static void load_settings(void) {
   }
 }
 
-static void request_weather(void) {
+static void send_request(uint8_t key) {
   DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
-  dict_write_uint8(iter, KEY_REQUEST_WEATHER, 1);
+  if (app_message_outbox_begin(&iter) != APP_MSG_OK) return;
+  dict_write_uint8(iter, key, 1);
   app_message_outbox_send();
 }
 
@@ -346,7 +348,7 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
 
   int w = bounds.size.w;
 
-  GFont time_font = fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
+  GFont time_font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   if (s_settings.use_24h) {
     strftime(s_time_text, sizeof(s_time_text), "%H:%M", localtime(&(time_t){time(NULL)}));
   } else {
@@ -357,6 +359,15 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
   GRect time_box = GRect(0, 2, w, 48);
   graphics_draw_text(ctx, s_time_text, time_font, time_box,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+  if (!s_settings.use_24h) {
+    char ampm[4];
+    strftime(ampm, sizeof(ampm), "%p", localtime(&(time_t){time(NULL)}));
+    graphics_draw_text(ctx, ampm,
+      fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(w - 32, 4, 28, 16), GTextOverflowModeTrailingEllipsis,
+      GTextAlignmentCenter, NULL);
+  }
 
   GRect date_box = GRect(4, 50, w - 8, 20);
   strftime(s_date_text, sizeof(s_date_text), s_settings.date_format, localtime(&(time_t){time(NULL)}));
@@ -465,11 +476,12 @@ static void update_health(void) {
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   check_update_night();
   update_health();
+  send_request(KEY_REQUEST_SETTINGS);
 
   time_t now = time(NULL);
   if (now - s_last_weather_fetch > WEATHER_REFRESH_MINUTES * 60) {
     s_last_weather_fetch = now;
-    request_weather();
+    send_request(KEY_REQUEST_WEATHER);
   }
 
   s_batt_pct = battery_state_service_peek().charge_percent;
@@ -504,12 +516,6 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_weather.valid = false;
   }
 
-  t = dict_find(iter, KEY_USE_24H);
-  if (t) s_settings.use_24h = t->value->uint8;
-  t = dict_find(iter, KEY_DATE_FORMAT);
-  if (t) strncpy(s_settings.date_format, t->value->cstring, sizeof(s_settings.date_format));
-  t = dict_find(iter, KEY_TEMP_UNIT);
-  if (t) s_settings.temp_unit = t->value->uint8;
   t = dict_find(iter, KEY_QUAD_TL);
   if (t) s_settings.quad_tl = t->value->uint8;
   t = dict_find(iter, KEY_QUAD_TR);
@@ -518,24 +524,12 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   if (t) s_settings.quad_bl = t->value->uint8;
   t = dict_find(iter, KEY_QUAD_BR);
   if (t) s_settings.quad_br = t->value->uint8;
-  t = dict_find(iter, KEY_FG_DAY);
-  if (t) s_settings.fg_day.argb = t->value->uint8;
-  t = dict_find(iter, KEY_BG_DAY);
-  if (t) s_settings.bg_day.argb = t->value->uint8;
-  t = dict_find(iter, KEY_USE_DAY_NIGHT);
-  if (t) s_settings.use_day_night = t->value->uint8;
-  t = dict_find(iter, KEY_FG_NIGHT);
-  if (t) s_settings.fg_night.argb = t->value->uint8;
-  t = dict_find(iter, KEY_BG_NIGHT);
-  if (t) s_settings.bg_night.argb = t->value->uint8;
-  t = dict_find(iter, KEY_USE_GPS);
-  if (t) s_settings.use_gps = t->value->uint8;
-  t = dict_find(iter, KEY_LATITUDE);
-  if (t) s_settings.latitude = t->value->int32;
-  t = dict_find(iter, KEY_LONGITUDE);
-  if (t) s_settings.longitude = t->value->int32;
-  t = dict_find(iter, KEY_LOCATION_STR);
-  if (t) strncpy(s_settings.location_name, t->value->cstring, sizeof(s_settings.location_name));
+
+  t = dict_find(iter, KEY_SETTINGS_BLOB);
+  if (t && t->length == sizeof(Settings)) {
+    memcpy(&s_settings, t->value->data, sizeof(Settings));
+    s_settings.version = SETTINGS_VERSION;
+  }
 
   save_settings();
   check_update_night();
@@ -581,7 +575,8 @@ static void window_load(Window *window) {
 
   time_t now = time(NULL);
   s_last_weather_fetch = now - WEATHER_REFRESH_MINUTES * 60 + 30;
-  request_weather();
+  send_request(KEY_REQUEST_WEATHER);
+  send_request(KEY_REQUEST_SETTINGS);
 }
 
 static void window_unload(Window *window) {
@@ -596,20 +591,19 @@ static void init(void) {
     .load = window_load,
     .unload = window_unload
   });
-  window_set_background_color(s_window, get_bg_color());
-  window_stack_push(s_window, true);
 
-  const int inbox = 512;
-  const int outbox = 256;
-  app_message_open(inbox, outbox);
   app_message_register_inbox_received(inbox_received);
   app_message_register_inbox_dropped(inbox_dropped);
   app_message_register_outbox_failed(outbox_failed);
   app_message_register_outbox_sent(outbox_sent);
+  app_message_open(792, 128);
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
   battery_state_service_subscribe(battery_handler);
   bluetooth_connection_service_subscribe(bt_handler);
+
+  window_set_background_color(s_window, get_bg_color());
+  window_stack_push(s_window, true);
 }
 
 static void deinit(void) {
