@@ -21,7 +21,8 @@ var COLOR_SWATCHES = (function() {
     var g = ((ci >> 2) & 3) * 85;
     var b = (ci & 3) * 85;
     var hex = '#' + [r,g,b].map(function(c) { return ('0' + c.toString(16)).slice(-2); }).join('');
-    h += '<div class="color-swatch" style="background:' + hex + '" data-val="' + (0xC0 | ci) + '" onclick="pickColor(this)"></div>';
+    var val = 0xC0 | ci;
+    h += '<div class="color-swatch" style="background:' + hex + '" data-val="' + val + '" data-xor="' + gcolorToHex(val ^ 0x3F) + '" onclick="pickColor(this)"></div>';
   }
   return h;
 })();
@@ -46,7 +47,7 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '.toggle.on::after{left:25px}' +
 '.color-grid{display:flex;flex-wrap:wrap;gap:2px;margin:4px 0 8px}' +
 '.color-swatch{width:22px;height:22px;border-radius:3px;border:2px solid transparent;cursor:pointer}' +
-'.color-swatch.selected{border-color:#fff}' +
+'.color-swatch.selected{}' +
 'button{width:100%;padding:12px;background:#0f3460;color:white;border:none;border-radius:8px;font-size:17px;font-weight:600;margin-top:24px;cursor:pointer}' +
 'button:active{background:#1a5276}' +
 '.night-section{border-left:3px solid #0f3460;padding-left:12px;margin-top:8px}' +
@@ -99,8 +100,8 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '</div>' +
 '<button onclick="save()">Save Settings</button>' +
 '<script>' +
-'function pickColor(el){var p=el.parentNode;for(var i=0;i<p.children.length;i++)p.children[i].classList.remove("selected");el.classList.add("selected");document.getElementById(p.id.replace("Picker","")).value=el.getAttribute("data-val")}' +
-'function selectColor(pid,val){var p=document.getElementById(pid);for(var i=0;i<p.children.length;i++){if(parseInt(p.children[i].getAttribute("data-val"))===val)p.children[i].classList.add("selected")}}' +
+'function pickColor(el){var p=el.parentNode;for(var i=0;i<p.children.length;i++){p.children[i].classList.remove("selected");p.children[i].style.backgroundImage=""}el.classList.add("selected");el.style.backgroundImage="radial-gradient(circle at 50% 50%,"+el.getAttribute("data-xor")+" 35%,transparent 40%)";document.getElementById(p.id.replace("Picker","")).value=el.getAttribute("data-val")}' +
+'function selectColor(pid,val){var p=document.getElementById(pid);for(var i=0;i<p.children.length;i++){if(parseInt(p.children[i].getAttribute("data-val"))===val){p.children[i].classList.add("selected");p.children[i].style.backgroundImage="radial-gradient(circle at 50% 50%,"+p.children[i].getAttribute("data-xor")+" 35%,transparent 40%)"}}}' +
 'function toggle(el){el.classList.toggle("on");var id=el.id;if(id==="toggleGps"){document.getElementById("manualLoc").style.display=el.classList.contains("on")?"none":"block"}' +
 'if(id==="toggleDayNight"){document.getElementById("nightColors").style.display=el.classList.contains("on")?"block":"none"}}' +
 'function getQueryParam(name){var match=location.search.match(new RegExp("[?&]"+name+"=([^&]*)"));return match?decodeURIComponent(match[1].replace(/\\+/g," ")):null}' +
@@ -360,7 +361,15 @@ function decodeSettings(buf) {
 Pebble.addEventListener('appmessage', function(e) {
   if (e.payload) {
     if (e.payload.settingsBlob !== undefined) {
-      var cfg = decodeSettings(e.payload.settingsBlob);
+      var raw = e.payload.settingsBlob;
+      var buf = [];
+      if (raw.byteLength !== undefined) {
+        var view = new Uint8Array(raw);
+        for (var i = 0; i < view.length; i++) buf.push(view[i]);
+      } else {
+        for (var i = 0; i < raw.length; i++) buf.push(raw[i]);
+      }
+      var cfg = decodeSettings(buf);
       for (var k in cfg) {
         cachedSettings[k] = cfg[k];
       }
