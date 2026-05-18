@@ -3,6 +3,7 @@
 #define SETTINGS_KEY 1
 #define SETTINGS_VERSION 2
 #define WEATHER_REFRESH_MINUTES 30
+#define QUAD_AREA_PCT 45
 
 typedef struct {
   uint8_t quad_id;     // 0=off,1=batt,2=steps,3=hr,4=rain
@@ -319,11 +320,11 @@ static void draw_quadrant(GContext *ctx, int x, int y, int w, int h, uint8_t typ
     }
     case 4: {
       if (s_weather.valid) {
-        draw_weather_icon(ctx, x + w/2 - 12, y + 1, 16, s_weather.condition, s_is_night);
+        draw_weather_icon(ctx, x + w/2 - 12, y + 1, 14, s_weather.condition, s_is_night);
         snprintf(s_quads[index].value, sizeof(s_quads[index].value), "%u%%", s_weather.precip_prob);
         graphics_draw_text(ctx, s_quads[index].value,
           fonts_get_system_font(FONT_KEY_GOTHIC_14),
-          GRect(x, y + 22, w, 14), GTextOverflowModeTrailingEllipsis,
+          GRect(x, y + 18, w, 14), GTextOverflowModeTrailingEllipsis,
           GTextAlignmentCenter, NULL);
       } else {
         graphics_draw_text(ctx, "--",
@@ -411,7 +412,7 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
       GTextAlignmentCenter, NULL);
   }
 
-  GRect date_box = GRect(4, 50, w - 8, 20);
+  GRect date_box = GRect(4, 48, w - 8, 20);
   strftime(s_date_text, sizeof(s_date_text), s_settings.date_format, localtime(&(time_t){time(NULL)}));
   graphics_draw_text(ctx, s_date_text,
     fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), date_box,
@@ -576,12 +577,14 @@ static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  s_top_layer = layer_create(GRect(0, 0, bounds.size.w, bounds.size.h / 2));
+  int bot_h = bounds.size.h * QUAD_AREA_PCT / 100;
+  int top_h = bounds.size.h - bot_h;
+
+  s_top_layer = layer_create(GRect(0, 0, bounds.size.w, top_h));
   layer_set_update_proc(s_top_layer, top_layer_update);
   layer_add_child(window_layer, s_top_layer);
 
-  int bot_y = bounds.size.h / 2;
-  s_bot_layer = layer_create(GRect(0, bot_y, bounds.size.w, bounds.size.h - bot_y));
+  s_bot_layer = layer_create(GRect(0, top_h, bounds.size.w, bot_h));
   layer_set_update_proc(s_bot_layer, bot_layer_update);
   layer_add_child(window_layer, s_bot_layer);
 

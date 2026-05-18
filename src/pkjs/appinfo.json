@@ -1,8 +1,8 @@
 {
   "uuid": "1ede8f92-c273-4789-9cde-793a9ec649b4",
-  "shortName": "Junkies Face",
-  "longName": "Junkies Weather Watchface",
-  "companyName": "JunkiesDev",
+  "shortName": "Pebble Junkies",
+  "longName": "Pebble Junkies",
+  "companyName": "Pebble Junkies",
   "versionLabel": "1.0",
   "sdkVersion": "3",
   "targetPlatforms": ["aplite", "basalt", "diorite"],
