@@ -1,0 +1,45 @@
+{
+  "uuid": "00000000-0000-0000-0000-000000000000",
+  "shortName": "Junkies Face",
+  "longName": "Junkies Weather Watchface",
+  "companyName": "JunkiesDev",
+  "versionLabel": "1.0",
+  "sdkVersion": "3",
+  "targetPlatforms": ["aplite", "basalt", "diorite"],
+  "enableMultiJS": false
+  "watchapp": {
+    "watchface": true
+  },
+  "appKeys": {
+    "requestWeather": 0,
+    "temp": 1,
+    "tempHi": 2,
+    "tempLo": 3,
+    "condition": 4,
+    "precipProb": 5,
+    "sunrise": 6,
+    "sunset": 7,
+    "locationName": 8,
+    "error": 9,
+    "use24h": 10,
+    "dateFormat": 11,
+    "tempUnit": 12,
+    "quadTL": 13,
+    "quadTR": 14,
+    "quadBL": 15,
+    "quadBR": 16,
+    "fgDay": 17,
+    "bgDay": 18,
+    "useDayNight": 19,
+    "fgNight": 20,
+    "bgNight": 21,
+    "useGPS": 22,
+    "latitude": 23,
+    "longitude": 24,
+    "locationStr": 25
+  },
+  "capabilities": ["health", "configurable"],
+  "resources": {
+    "media": []
+  }
+}
