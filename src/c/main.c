@@ -1,8 +1,7 @@
 #include <pebble.h>
 
 #define SETTINGS_KEY 1
-#define SETTINGS_VERSION 2
-#define WEATHER_REFRESH_MINUTES 30
+#define SETTINGS_VERSION 3
 #define QUAD_AREA_PCT 45
 
 typedef struct {
@@ -14,9 +13,13 @@ typedef struct {
 } QuadrantData;
 
 static Window *s_window;
+static Layer *s_bt_layer;
+#ifdef PBL_ROUND
+static Layer *s_main_layer;
+#else
 static Layer *s_top_layer;
 static Layer *s_bot_layer;
-static Layer *s_bt_layer;
+#endif
 
 static bool s_bluetooth_connected = true;
 
@@ -65,6 +68,7 @@ typedef struct __attribute__((__packed__)) {
   bool use_24h;
   char date_format[20];
   uint8_t temp_unit;
+  uint8_t weather_interval;
   uint8_t quad_tl;
   uint8_t quad_tr;
   uint8_t quad_bl;
@@ -102,6 +106,7 @@ static void set_default_settings(void) {
   s_settings.use_24h = false;
   strcpy(s_settings.date_format, "%a, %b %d");
   s_settings.temp_unit = 0;
+  s_settings.weather_interval = 60;
   s_settings.quad_tl = 1;
   s_settings.quad_tr = 4;
   s_settings.quad_bl = 2;
@@ -383,17 +388,7 @@ static void draw_quadrant(GContext *ctx, int x, int y, int w, int h, uint8_t typ
   }
 }
 
-static void top_layer_update(Layer *layer, GContext *ctx) {
-  GRect bounds = layer_get_bounds(layer);
-  GColor8 fg = get_fg_color();
-  GColor8 bg = get_bg_color();
-  graphics_context_set_fill_color(ctx, bg);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-  graphics_context_set_text_color(ctx, fg);
-  graphics_context_set_fill_color(ctx, fg);
-
-  int w = bounds.size.w;
-
+static void draw_time_text(GContext *ctx, int w, int y) {
   GFont time_font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   if (s_settings.use_24h) {
     strftime(s_time_text, sizeof(s_time_text), "%H:%M", localtime(&(time_t){time(NULL)}));
@@ -401,8 +396,7 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
     strftime(s_time_text, sizeof(s_time_text), "%I:%M", localtime(&(time_t){time(NULL)}));
     if (s_time_text[0] == '0') memmove(s_time_text, s_time_text+1, strlen(s_time_text));
   }
-
-  GRect time_box = GRect(0, 2, w, 48);
+  GRect time_box = GRect(0, y, w, 48);
   graphics_draw_text(ctx, s_time_text, time_font, time_box,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
@@ -411,16 +405,61 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
     strftime(ampm, sizeof(ampm), "%p", localtime(&(time_t){time(NULL)}));
     graphics_draw_text(ctx, ampm,
       fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(w - 32, 4, 28, 16), GTextOverflowModeTrailingEllipsis,
+      GRect(w - 32, y + 2, 28, 16), GTextOverflowModeTrailingEllipsis,
       GTextAlignmentCenter, NULL);
   }
+}
 
-  GRect date_box = GRect(4, 46, w - 8, 26);
+static void draw_date_text(GContext *ctx, int w, int y) {
+  GRect date_box = GRect(4, y, w - 8, 26);
   strftime(s_date_text, sizeof(s_date_text), s_settings.date_format, localtime(&(time_t){time(NULL)}));
   graphics_draw_text(ctx, s_date_text,
     fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), date_box,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
+
+static void top_layer_update(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  GColor8 fg = get_fg_color();
+  GColor8 bg = get_bg_color();
+  graphics_context_set_fill_color(ctx, bg);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  graphics_context_set_text_color(ctx, fg);
+  graphics_context_set_fill_color(ctx, fg);
+  draw_time_text(ctx, bounds.size.w, 2);
+  draw_date_text(ctx, bounds.size.w, 46);
+}
+
+#ifdef PBL_ROUND
+static void round_main_update(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  int w = bounds.size.w, h = bounds.size.h;
+  GColor8 fg = get_fg_color();
+  GColor8 bg = get_bg_color();
+
+  graphics_context_set_fill_color(ctx, bg);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  graphics_context_set_text_color(ctx, fg);
+  graphics_context_set_fill_color(ctx, fg);
+
+  int qh = h * 24 / 100;
+  int qw = w / 2;
+
+  s_quads[0] = (QuadrantData){.quad_id = s_settings.quad_tl};
+  s_quads[1] = (QuadrantData){.quad_id = s_settings.quad_tr};
+  draw_quadrant(ctx, 0, 2, qw, qh, s_settings.quad_tl, 0);
+  draw_quadrant(ctx, qw, 2, qw, qh, s_settings.quad_tr, 1);
+
+  int time_y = 2 + qh + (h - 2 * (qh + 2) - 48) / 3;
+  draw_time_text(ctx, w, time_y);
+  draw_date_text(ctx, w, time_y + 50);
+
+  s_quads[2] = (QuadrantData){.quad_id = s_settings.quad_bl};
+  s_quads[3] = (QuadrantData){.quad_id = s_settings.quad_br};
+  draw_quadrant(ctx, 0, h - qh - 2, qw, qh, s_settings.quad_bl, 2);
+  draw_quadrant(ctx, qw, h - qh - 2, qw, qh, s_settings.quad_br, 3);
+}
+#endif
 
 static void bot_layer_update(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
@@ -461,6 +500,15 @@ static void bt_layer_update(Layer *layer, GContext *ctx) {
       bounds, GTextOverflowModeTrailingEllipsis,
       GTextAlignmentCenter, NULL);
   }
+}
+
+static void mark_dirty_all(void) {
+#ifdef PBL_ROUND
+  layer_mark_dirty(s_main_layer);
+#else
+  layer_mark_dirty(s_top_layer);
+  layer_mark_dirty(s_bot_layer);
+#endif
 }
 
 static void bt_handler(bool connected) {
@@ -507,14 +555,13 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   send_request(KEY_REQUEST_SETTINGS);
 
   time_t now = time(NULL);
-  if (now - s_last_weather_fetch > WEATHER_REFRESH_MINUTES * 60) {
+  if (now - s_last_weather_fetch > s_settings.weather_interval * 60) {
     s_last_weather_fetch = now;
     send_request(KEY_REQUEST_WEATHER);
   }
 
   s_batt_pct = battery_state_service_peek().charge_percent;
-  layer_mark_dirty(s_top_layer);
-  layer_mark_dirty(s_bot_layer);
+  mark_dirty_all();
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
@@ -563,8 +610,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   check_update_night();
 
   if (s_weather.valid) s_last_weather_fetch = time(NULL);
-  layer_mark_dirty(s_top_layer);
-  layer_mark_dirty(s_bot_layer);
+  mark_dirty_all();
 }
 
 static void inbox_dropped(AppMessageResult reason, void *context) {}
@@ -573,13 +619,18 @@ static void outbox_sent(DictionaryIterator *iter, void *context) {}
 
 static void battery_handler(BatteryChargeState charge) {
   s_batt_pct = charge.charge_percent;
-  layer_mark_dirty(s_bot_layer);
+  mark_dirty_all();
 }
 
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
+#ifdef PBL_ROUND
+  s_main_layer = layer_create(bounds);
+  layer_set_update_proc(s_main_layer, round_main_update);
+  layer_add_child(window_layer, s_main_layer);
+#else
   int bot_h = bounds.size.h * QUAD_AREA_PCT / 100;
   int top_h = bounds.size.h - bot_h;
 
@@ -590,6 +641,7 @@ static void window_load(Window *window) {
   s_bot_layer = layer_create(GRect(0, top_h, bounds.size.w, bot_h));
   layer_set_update_proc(s_bot_layer, bot_layer_update);
   layer_add_child(window_layer, s_bot_layer);
+#endif
 
   s_bt_layer = layer_create(GRect(0, 0, bounds.size.w, 16));
   layer_set_update_proc(s_bt_layer, bt_layer_update);
@@ -604,14 +656,18 @@ static void window_load(Window *window) {
   layer_set_hidden(s_bt_layer, s_bluetooth_connected);
 
   time_t now = time(NULL);
-  s_last_weather_fetch = now - WEATHER_REFRESH_MINUTES * 60 + 30;
+  s_last_weather_fetch = now - s_settings.weather_interval * 60 + 30;
   send_request(KEY_REQUEST_WEATHER);
   send_request(KEY_REQUEST_SETTINGS);
 }
 
 static void window_unload(Window *window) {
+#ifdef PBL_ROUND
+  layer_destroy(s_main_layer);
+#else
   layer_destroy(s_top_layer);
   layer_destroy(s_bot_layer);
+#endif
   layer_destroy(s_bt_layer);
 }
 

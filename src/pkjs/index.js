@@ -14,9 +14,21 @@ function gcolorToHex(argb) {
   }).join('');
 }
 
+var COLOR_SWATCHES = (function() {
+  var h = '';
+  for (var ci = 0; ci < 64; ci++) {
+    var r = ((ci >> 4) & 3) * 85;
+    var g = ((ci >> 2) & 3) * 85;
+    var b = (ci & 3) * 85;
+    var hex = '#' + [r,g,b].map(function(c) { return ('0' + c.toString(16)).slice(-2); }).join('');
+    h += '<div class="color-swatch" style="background:' + hex + '" data-val="' + (0xC0 | ci) + '" onclick="pickColor(this)"></div>';
+  }
+  return h;
+})();
+
 var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">' +
-'<title>Watchface Settings</title>' +
+'<title>Pebble Junkies</title>' +
 '<style>' +
 '*{box-sizing:border-box;margin:0;padding:0}' +
 'body{font-family:-apple-system,Helvetica,sans-serif;background:#1a1a2e;color:#eee;padding:16px;max-width:400px;margin:0 auto}' +
@@ -24,7 +36,6 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'h2:first-child{margin-top:0}' +
 'label{display:block;margin:10px 0 4px;font-size:13px;color:#aaa}' +
 'select,input[type=text],input[type=number]{width:100%;padding:8px;background:#16213e;color:#eee;border:1px solid #0f3460;border-radius:6px;font-size:15px}' +
-'input[type=color]{width:100%;height:40px;padding:2px;background:#16213e;border:1px solid #0f3460;border-radius:6px;cursor:pointer}' +
 '.row{display:flex;gap:10px;margin:0}' +
 '.col{flex:1}' +
 '.toggle-wrap{display:flex;align-items:center;justify-content:space-between;margin:10px 0;padding:8px;background:#16213e;border-radius:6px}' +
@@ -33,10 +44,16 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '.toggle.on{background:#0f3460}' +
 '.toggle::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;background:white;border-radius:50%;transition:0.2s}' +
 '.toggle.on::after{left:25px}' +
+'.color-grid{display:flex;flex-wrap:wrap;gap:2px;margin:4px 0 8px}' +
+'.color-swatch{width:22px;height:22px;border-radius:3px;border:2px solid transparent;cursor:pointer}' +
+'.color-swatch.selected{border-color:#fff}' +
 'button{width:100%;padding:12px;background:#0f3460;color:white;border:none;border-radius:8px;font-size:17px;font-weight:600;margin-top:24px;cursor:pointer}' +
 'button:active{background:#1a5276}' +
 '.night-section{border-left:3px solid #0f3460;padding-left:12px;margin-top:8px}' +
 '.note{font-size:11px;color:#666;margin:4px 0}' +
+'.about{margin-top:20px;padding:12px;background:#16213e;border-radius:8px;text-align:center}' +
+'.about p{font-size:11px;color:#888;margin:2px 0}' +
+'.about strong{color:#ccc}' +
 '</style></head><body>' +
 '<h2>Time &amp; Date</h2>' +
 '<div class="toggle-wrap"><label>24-hour format</label><div id="toggle24h" class="toggle" onclick="toggle(this)"></div></div>' +
@@ -55,11 +72,12 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '<h2>Weather</h2>' +
 '<label>Temperature unit</label>' +
 '<select id="tempUnit"><option value="0">Celsius</option><option value="1">Fahrenheit</option><option value="2">Kelvin</option></select>' +
+'<label>Refresh interval</label>' +
+'<select id="weatherInterval"><option value="5">5 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60" selected>60 minutes</option></select>' +
 '<div class="toggle-wrap"><label>Use GPS for location</label><div id="toggleGps" class="toggle" onclick="toggle(this)"></div></div>' +
 '<div id="manualLoc" style="display:none">' +
-'<label>Location name (optional)</label><input type="text" id="locName" placeholder="e.g. London">' +
-'<div class="row"><div class="col"><label>Latitude</label><input type="number" id="latitude" step="0.0001" placeholder="51.5"></div>' +
-'<div class="col"><label>Longitude</label><input type="number" id="longitude" step="0.0001" placeholder="-0.12"></div></div>' +
+'<label>City or location name</label><input type="text" id="locName" placeholder="e.g. London">' +
+'<div class="note">City will be looked up automatically</div>' +
 '</div>' +
 '<h2>Bottom Quadrants</h2>' +
 '<div class="row"><div class="col"><label>Top-Left</label><select id="quadTL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div>' +
@@ -67,17 +85,22 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '<div class="row"><div class="col"><label>Bottom-Left</label><select id="quadBL"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div>' +
 '<div class="col"><label>Bottom-Right</label><select id="quadBR"><option value="0">Off</option><option value="1">Battery</option><option value="2">Steps</option><option value="3">Heart Rate</option><option value="4">Rain %</option><option value="5">Temperature</option><option value="6">Weather</option></select></div></div>' +
 '<h2>Colors</h2>' +
-'<div class="row"><div class="col"><label>Foreground (day)</label><input type="color" id="fgDay" value="#ffffff"></div>' +
-'<div class="col"><label>Background (day)</label><input type="color" id="bgDay" value="#000000"></div></div>' +
+'<label>Foreground (day)</label><div id="fgDayPicker" class="color-grid">'+COLOR_SWATCHES+'</div><input type="hidden" id="fgDay" value="255">' +
+'<label>Background (day)</label><div id="bgDayPicker" class="color-grid">'+COLOR_SWATCHES+'</div><input type="hidden" id="bgDay" value="0">' +
 '<div class="toggle-wrap"><label>Day/Night auto-switch</label><div id="toggleDayNight" class="toggle" onclick="toggle(this)"></div></div>' +
 '<div id="nightColors" class="night-section" style="display:none">' +
-'<div class="row"><div class="col"><label>Foreground (night)</label><input type="color" id="fgNight" value="#000000"></div>' +
-'<div class="col"><label>Background (night)</label><input type="color" id="bgNight" value="#ffffff"></div></div>' +
+'<label>Foreground (night)</label><div id="fgNightPicker" class="color-grid">'+COLOR_SWATCHES+'</div><input type="hidden" id="fgNight" value="0">' +
+'<label>Background (night)</label><div id="bgNightPicker" class="color-grid">'+COLOR_SWATCHES+'</div><input type="hidden" id="bgNight" value="255">' +
+'</div>' +
+'<div class="about">' +
+'<p><strong>Pebble Junkies v1.0</strong></p>' +
+'<p>Vibe Coded by Adrian Chiang (with OpenCode)</p>' +
+'<p>Code is open sourced at github.com/ajack2001my/pebble-junkies</p>' +
 '</div>' +
 '<button onclick="save()">Save Settings</button>' +
 '<script>' +
-'function hexToGColor8(hex){var r=Math.round((parseInt(hex.substring(1,3),16)/255)*3)&3;var g=Math.round((parseInt(hex.substring(3,5),16)/255)*3)&3;var b=Math.round((parseInt(hex.substring(5,7),16)/255)*3)&3;return(0b11<<6)|(r<<4)|(g<<2)|b}' +
-'function gcolorToHex(argb){var r=Math.round(((argb>>4)&3)*85);var g=Math.round(((argb>>2)&3)*85);var b=Math.round((argb&3)*85);return"#"+[r,g,b].map(function(c){return("0"+c.toString(16)).slice(-2)}).join("")}' +
+'function pickColor(el){var p=el.parentNode;for(var i=0;i<p.children.length;i++)p.children[i].classList.remove("selected");el.classList.add("selected");document.getElementById(p.id.replace("Picker","")).value=el.getAttribute("data-val")}' +
+'function selectColor(pid,val){var p=document.getElementById(pid);for(var i=0;i<p.children.length;i++){if(parseInt(p.children[i].getAttribute("data-val"))===val)p.children[i].classList.add("selected")}}' +
 'function toggle(el){el.classList.toggle("on");var id=el.id;if(id==="toggleGps"){document.getElementById("manualLoc").style.display=el.classList.contains("on")?"none":"block"}' +
 'if(id==="toggleDayNight"){document.getElementById("nightColors").style.display=el.classList.contains("on")?"block":"none"}}' +
 'function getQueryParam(name){var match=location.search.match(new RegExp("[?&]"+name+"=([^&]*)"));return match?decodeURIComponent(match[1].replace(/\\+/g," ")):null}' +
@@ -85,17 +108,16 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'setToggle("toggle24h",cfg.use24h);' +
 'setSelect("dateFormat",cfg.dateFormat);' +
 'setSelect("tempUnit",cfg.tempUnit);' +
+'setSelect("weatherInterval",cfg.weatherInterval);' +
 'setToggle("toggleGps",cfg.useGPS);' +
-'if(cfg.latitude)setVal("latitude",cfg.latitude/10000);' +
-'if(cfg.longitude)setVal("longitude",cfg.longitude/10000);' +
 'if(cfg.locationStr)setVal("locName",cfg.locationStr);' +
 'setSelect("quadTL",cfg.quadTL);setSelect("quadTR",cfg.quadTR);' +
 'setSelect("quadBL",cfg.quadBL);setSelect("quadBR",cfg.quadBR);' +
-'if(cfg.fgDay){var fg=Number(cfg.fgDay);if(!isNaN(fg)){setVal("fgDay",gcolorToHex(fg))}}' +
-'if(cfg.bgDay){var bg=Number(cfg.bgDay);if(!isNaN(bg)){setVal("bgDay",gcolorToHex(bg))}}' +
+'if(cfg.fgDay!==undefined)selectColor("fgDayPicker",cfg.fgDay);' +
+'if(cfg.bgDay!==undefined)selectColor("bgDayPicker",cfg.bgDay);' +
 'setToggle("toggleDayNight",cfg.useDayNight);' +
-'if(cfg.fgNight){var fn=Number(cfg.fgNight);if(!isNaN(fn)){setVal("fgNight",gcolorToHex(fn))}}' +
-'if(cfg.bgNight){var bn=Number(cfg.bgNight);if(!isNaN(bn)){setVal("bgNight",gcolorToHex(bn))}}' +
+'if(cfg.fgNight!==undefined)selectColor("fgNightPicker",cfg.fgNight);' +
+'if(cfg.bgNight!==undefined)selectColor("bgNightPicker",cfg.bgNight);' +
 'if(!cfg.useGPS)document.getElementById("manualLoc").style.display="block";' +
 'if(cfg.useDayNight)document.getElementById("nightColors").style.display="block"}catch(e){}}' +
 'function setToggle(id,val){var el=document.getElementById(id);if(val){el.classList.add("on")}}' +
@@ -105,21 +127,19 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'config.use24h=document.getElementById("toggle24h").classList.contains("on")?1:0;' +
 'config.dateFormat=document.getElementById("dateFormat").value;' +
 'config.tempUnit=parseInt(document.getElementById("tempUnit").value);' +
+'config.weatherInterval=parseInt(document.getElementById("weatherInterval").value);' +
 'config.useGPS=document.getElementById("toggleGps").classList.contains("on")?1:0;' +
-'if(!config.useGPS){' +
-'config.latitude=Math.round(parseFloat(document.getElementById("latitude").value||"0")*10000);' +
-'config.longitude=Math.round(parseFloat(document.getElementById("longitude").value||"0")*10000);' +
-'config.locationStr=document.getElementById("locName").value||""}' +
+'if(!config.useGPS){config.locationStr=document.getElementById("locName").value||""}' +
 'config.quadTL=parseInt(document.getElementById("quadTL").value);' +
 'config.quadTR=parseInt(document.getElementById("quadTR").value);' +
 'config.quadBL=parseInt(document.getElementById("quadBL").value);' +
 'config.quadBR=parseInt(document.getElementById("quadBR").value);' +
-'config.fgDay=hexToGColor8(document.getElementById("fgDay").value);' +
-'config.bgDay=hexToGColor8(document.getElementById("bgDay").value);' +
+'config.fgDay=parseInt(document.getElementById("fgDay").value);' +
+'config.bgDay=parseInt(document.getElementById("bgDay").value);' +
 'config.useDayNight=document.getElementById("toggleDayNight").classList.contains("on")?1:0;' +
 'if(config.useDayNight){' +
-'config.fgNight=hexToGColor8(document.getElementById("fgNight").value);' +
-'config.bgNight=hexToGColor8(document.getElementById("bgNight").value)}' +
+'config.fgNight=parseInt(document.getElementById("fgNight").value);' +
+'config.bgNight=parseInt(document.getElementById("bgNight").value)}' +
 'document.location="pebblejs://close#"+encodeURIComponent(JSON.stringify(config))}' +
 'window.onload=load<\/script></body></html>';
 
@@ -169,7 +189,6 @@ function fetchWeatherFromAPI(lat, lon) {
         wd['6'] = sunriseMin;
         wd['7'] = sunsetMin;
         wd['8'] = locName;
-        wd['28'] = 77;
         Pebble.sendAppMessage(wd);
       } catch(e) {
         sendError('Parse error');
@@ -208,6 +227,28 @@ function requestLocationAndFetch() {
   );
 }
 
+function geocodeCity(city, callback) {
+  var url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json';
+  var req = new XMLHttpRequest();
+  req.timeout = 15000;
+  req.open('GET', url, true);
+  req.onload = function() {
+    if (req.status === 200) {
+      try {
+        var data = JSON.parse(req.responseText);
+        if (data.results && data.results.length > 0) {
+          callback(data.results[0].latitude, data.results[0].longitude, data.results[0].name || city);
+        } else {
+          sendError('City not found: ' + city);
+        }
+      } catch(e) { sendError('Geocode parse error'); }
+    } else { sendError('Geocode HTTP ' + req.status); }
+  };
+  req.onerror = function() { sendError('Geocode network error'); };
+  req.ontimeout = function() { sendError('Geocode timeout'); };
+  req.send();
+}
+
 Pebble.addEventListener('showConfiguration', function(e) {
   var html = CONFIG_HTML;
   if (Object.keys(cachedSettings).length > 0) {
@@ -220,11 +261,12 @@ Pebble.addEventListener('showConfiguration', function(e) {
 
 function encodeSettings(config) {
   var buf = [];
-  buf.push(2); // version
+  buf.push(3); // version
   buf.push(config.use24h ? 1 : 0);
   var df = config.dateFormat || '';
   for (var i = 0; i < 20; i++) buf.push(i < df.length ? df.charCodeAt(i) : 0);
   buf.push(config.tempUnit || 0);
+  buf.push(config.weatherInterval || 60);
   buf.push(config.quadTL || 0);
   buf.push(config.quadTR || 0);
   buf.push(config.quadBL || 0);
@@ -254,6 +296,7 @@ function decodeSettings(buf) {
   for (var i = 0; i < 20; i++) { var c = buf[pos++]; if (c) df += String.fromCharCode(c); }
   cfg.dateFormat = df;
   cfg.tempUnit = buf[pos++];
+  cfg.weatherInterval = buf[pos++];
   cfg.quadTL = buf[pos++];
   cfg.quadTR = buf[pos++];
   cfg.quadBL = buf[pos++];
@@ -301,11 +344,15 @@ function decodeSettings(buf) {
     }, 2000);
     if (config.useGPS) {
       requestLocationAndFetch();
-    } else if (config.latitude && config.longitude) {
-      locationData.lat = config.latitude / 10000;
-      locationData.lon = config.longitude / 10000;
-      locationData.name = config.locationStr || '';
-      fetchWeatherFromAPI(locationData.lat, locationData.lon);
+    } else if (config.locationStr) {
+      geocodeCity(config.locationStr, function(lat, lon, name) {
+        locationData.lat = lat;
+        locationData.lon = lon;
+        locationData.name = name;
+        cachedSettings.latitude = Math.round(lat * 10000);
+        cachedSettings.longitude = Math.round(lon * 10000);
+        fetchWeatherFromAPI(lat, lon);
+      });
     }
   }
 });
@@ -332,7 +379,6 @@ Pebble.addEventListener('appmessage', function(e) {
         qd['14'] = cachedSettings.quadTR || 0;
         qd['15'] = cachedSettings.quadBL || 0;
         qd['16'] = cachedSettings.quadBR || 0;
-        qd['28'] = 99;
         Pebble.sendAppMessage(qd);
       }
     }
