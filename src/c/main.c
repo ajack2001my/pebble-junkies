@@ -155,6 +155,14 @@ static void send_request(uint8_t key) {
   app_message_outbox_send();
 }
 
+static void send_settings_with_blob(void) {
+  DictionaryIterator *iter;
+  if (app_message_outbox_begin(&iter) != APP_MSG_OK) return;
+  dict_write_uint8(iter, KEY_REQUEST_SETTINGS, 1);
+  dict_write_data(iter, KEY_SETTINGS_BLOB, (const uint8_t *)&s_settings, sizeof(Settings));
+  app_message_outbox_send();
+}
+
 static void check_update_night(void) {
   if (!s_settings.use_day_night || !s_weather.valid) {
     s_is_night = false;
@@ -418,6 +426,7 @@ static void draw_date_text(GContext *ctx, int w, int y) {
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
+#ifndef PBL_ROUND
 static void top_layer_update(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   GColor8 fg = get_fg_color();
@@ -429,6 +438,7 @@ static void top_layer_update(Layer *layer, GContext *ctx) {
   draw_time_text(ctx, bounds.size.w, 2);
   draw_date_text(ctx, bounds.size.w, 46);
 }
+#endif
 
 #ifdef PBL_ROUND
 static void round_main_update(Layer *layer, GContext *ctx) {
@@ -461,6 +471,7 @@ static void round_main_update(Layer *layer, GContext *ctx) {
 }
 #endif
 
+#ifndef PBL_ROUND
 static void bot_layer_update(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   GColor8 fg = get_fg_color();
@@ -488,6 +499,7 @@ static void bot_layer_update(Layer *layer, GContext *ctx) {
   }
 
 }
+#endif
 
 static void bt_layer_update(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
@@ -552,7 +564,7 @@ static void update_health(void) {
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   check_update_night();
   update_health();
-  send_request(KEY_REQUEST_SETTINGS);
+  send_settings_with_blob();
 
   time_t now = time(NULL);
   if (now - s_last_weather_fetch > s_settings.weather_interval * 60) {
@@ -658,7 +670,7 @@ static void window_load(Window *window) {
   time_t now = time(NULL);
   s_last_weather_fetch = now - s_settings.weather_interval * 60 + 30;
   send_request(KEY_REQUEST_WEATHER);
-  send_request(KEY_REQUEST_SETTINGS);
+  send_settings_with_blob();
 }
 
 static void window_unload(Window *window) {
