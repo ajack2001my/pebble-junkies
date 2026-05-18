@@ -414,7 +414,7 @@ static void draw_time_text(GContext *ctx, int w, int y) {
     strftime(ampm, sizeof(ampm), "%p", localtime(&(time_t){time(NULL)}));
     graphics_draw_text(ctx, ampm,
       fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(w - 32, y + 2, 28, 16), GTextOverflowModeTrailingEllipsis,
+      GRect(w - 32, PBL_IF_ROUND_ELSE(y + 2, 2), 28, 16), GTextOverflowModeTrailingEllipsis,
       GTextAlignmentCenter, NULL);
   }
 }
@@ -430,14 +430,17 @@ static void draw_date_text(GContext *ctx, int w, int y) {
 #ifndef PBL_ROUND
 static void top_layer_update(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
+  int h = bounds.size.h;
   GColor8 fg = get_fg_color();
   GColor8 bg = get_bg_color();
   graphics_context_set_fill_color(ctx, bg);
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
   graphics_context_set_text_color(ctx, fg);
   graphics_context_set_fill_color(ctx, fg);
-  draw_time_text(ctx, bounds.size.w, 2);
-  draw_date_text(ctx, bounds.size.w, 46);
+  int time_y = h * 12 / 100;
+  int gap = (h - time_y - 42 - 24) / 2;
+  draw_time_text(ctx, bounds.size.w, time_y);
+  draw_date_text(ctx, bounds.size.w, time_y + 42 + gap);
 }
 #endif
 
