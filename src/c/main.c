@@ -134,8 +134,15 @@ static GColor8 get_bg_color(void) {
   return s_settings.bg_day;
 }
 
+static bool s_settings_dirty = false;
+
 static void save_settings(void) {
   persist_write_data(SETTINGS_KEY, &s_settings, sizeof(Settings));
+  s_settings_dirty = false;
+}
+
+static void mark_settings_dirty(void) {
+  s_settings_dirty = true;
 }
 
 static void load_settings(void) {
@@ -143,9 +150,13 @@ static void load_settings(void) {
     persist_read_data(SETTINGS_KEY, &s_settings, sizeof(Settings));
     if (s_settings.version != SETTINGS_VERSION) {
       set_default_settings();
+      mark_settings_dirty();
+      save_settings();
     }
   } else {
     set_default_settings();
+    mark_settings_dirty();
+    save_settings();
   }
 }
 
@@ -608,18 +619,19 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   }
 
   t = dict_find(iter, KEY_QUAD_TL);
-  if (t) s_settings.quad_tl = t->value->uint8;
+  if (t && t->value->uint8 <= 6) { s_settings.quad_tl = t->value->uint8; mark_settings_dirty(); }
   t = dict_find(iter, KEY_QUAD_TR);
-  if (t) s_settings.quad_tr = t->value->uint8;
+  if (t && t->value->uint8 <= 6) { s_settings.quad_tr = t->value->uint8; mark_settings_dirty(); }
   t = dict_find(iter, KEY_QUAD_BL);
-  if (t) s_settings.quad_bl = t->value->uint8;
+  if (t && t->value->uint8 <= 6) { s_settings.quad_bl = t->value->uint8; mark_settings_dirty(); }
   t = dict_find(iter, KEY_QUAD_BR);
-  if (t) s_settings.quad_br = t->value->uint8;
+  if (t && t->value->uint8 <= 6) { s_settings.quad_br = t->value->uint8; mark_settings_dirty(); }
 
   t = dict_find(iter, KEY_SETTINGS_BLOB);
   if (t && t->length == sizeof(Settings)) {
     memcpy(&s_settings, t->value->data, sizeof(Settings));
     s_settings.version = SETTINGS_VERSION;
+    mark_settings_dirty();
   }
 
   t = dict_find(iter, KEY_REQUEST_RESEND);
@@ -627,7 +639,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     send_settings_with_blob();
   }
 
-  save_settings();
+  if (s_settings_dirty) save_settings();
   check_update_night();
 
   if (s_weather.valid) s_last_weather_fetch = time(NULL);
