@@ -128,10 +128,11 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'if(cfg.fgNight!==undefined)selectColor("fgNightPicker",cfg.fgNight);' +
 'if(cfg.bgNight!==undefined)selectColor("bgNightPicker",cfg.bgNight);' +
 'if(!cfg.useGPS)document.getElementById("manualLoc").style.display="block";' +
-'if(cfg.useDayNight)document.getElementById("nightColors").style.display="block"}catch(e){}}' +
+'if(cfg.useDayNight)document.getElementById("nightColors").style.display="block";if(typeof caps!==\'undefined\')filterOptions(caps)}catch(e){}}' +
 'function setToggle(id,val){var el=document.getElementById(id);if(val){el.classList.add("on")}}' +
 'function setSelect(id,val){if(val!==null&&val!==undefined){document.getElementById(id).value=val}}' +
 'function setVal(id,val){document.getElementById(id).value=val}' +
+'function filterOptions(caps){var ids=["quadTL","quadTR","quadBL","quadBR"];for(var si=0;si<ids.length;si++){var sel=document.getElementById(ids[si]);for(var i=sel.options.length-1;i>=0;i--){var v=parseInt(sel.options[i].value);if(v===2&&!(caps&1)||v===3&&!(caps&2))sel.remove(i)}}}' +
 'function save(){var config={};' +
 'config.use24h=document.getElementById("toggle24h").classList.contains("on")?1:0;' +
 'config.dateFormat=document.getElementById("dateFormat").value;' +
@@ -155,6 +156,11 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 // In-memory cache of the most recent settings received from the watchface.
 // Used to pre-populate the config page so the user sees their current values.
 var cachedSettings = {};
+
+// Capability bitmask from the watch — tells us which features the hardware supports.
+// Bit 0 = steps (HealthService), Bit 1 = heart rate (HR sensor).
+// On Aplite the watch always sends 0, so Steps and HR are hidden from the config page.
+var cachedCapabilities = 0;
 
 // Tracks the device's current location (lat/lon) for weather API calls
 var locationData = {
@@ -273,7 +279,7 @@ function geocodeCity(city, callback) {
 Pebble.addEventListener('showConfiguration', function(e) {
   if (Object.keys(cachedSettings).length > 0) {
     var configJson = JSON.stringify(cachedSettings);
-    var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
+    var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';var caps=' + cachedCapabilities + ';window.onload=load');
     Pebble.openURL('data:text/html,' + encodeURIComponent(html));
   } else {
     var d = {}; d['28'] = 1;
@@ -282,7 +288,7 @@ Pebble.addEventListener('showConfiguration', function(e) {
       if (Object.keys(cachedSettings).length > 0) {
         clearInterval(poll); clearTimeout(fallback);
         var configJson = JSON.stringify(cachedSettings);
-        var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';window.onload=load');
+        var html = CONFIG_HTML.replace('window.onload=load', 'var initialConfig=' + configJson + ';var caps=' + cachedCapabilities + ';window.onload=load');
         Pebble.openURL('data:text/html,' + encodeURIComponent(html));
       }
     }, 50);
@@ -416,6 +422,10 @@ Pebble.addEventListener('appmessage', function(e) {
       for (var k in cfg) {
         cachedSettings[k] = cfg[k];
       }
+    }
+    // Capture platform capabilities bitmask (KEY_CAPABILITIES = 29) sent by the watchface
+    if (e.payload['29'] !== undefined) {
+      cachedCapabilities = e.payload['29'];
     }
     // Weather fetch requested by the watchface tick
     if (e.payload.requestWeather !== undefined) {

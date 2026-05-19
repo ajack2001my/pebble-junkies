@@ -8,6 +8,10 @@
 // Percentage of screen height allocated to the bottom quadrant area (rectangular only)
 #define QUAD_AREA_PCT 45
 
+// Capability bits for quadrant types — probed at runtime via HealthService
+#define CAP_STEPS (1 << 0)
+#define CAP_HR    (1 << 1)
+
 // Holds the current display data for one of the four corner quadrants
 typedef struct {
   uint8_t quad_id;     // 0=off, 1=battery, 2=steps, 3=heart rate, 4=rain %, 5=temp, 6=weather icon
@@ -72,6 +76,7 @@ enum {
   KEY_SETTINGS_BLOB    = 26, // Full packed settings struct
   KEY_REQUEST_SETTINGS = 27, // Flag requesting settings sent from JS
   KEY_REQUEST_RESEND   = 28, // Flag to re-request settings from JS
+  KEY_CAPABILITIES     = 29, // Platform capability bitmask sent to JS
 };
 
 // Packed binary settings struct — written directly to persistent storage
@@ -115,6 +120,7 @@ static Settings s_settings;             // Current user settings (persisted to f
 static WeatherData s_weather;           // Most recent weather data
 static bool s_is_night = false;         // Whether the watch thinks it's currently nighttime
 static time_t s_last_weather_fetch = 0; // Timestamp of last successful weather fetch
+static uint8_t s_capabilities = 0;      // Platform capability bitmask for quadrant filtering
 
 // Populates the settings struct with sensible defaults for first-time use
 static void set_default_settings(void) {
@@ -166,7 +172,12 @@ static void mark_settings_dirty(void) {
   s_settings_dirty = true;
 }
 
-// Loads settings from persistent storage, falling back to defaults if missing or version-mismatched
+// Forward declarations for capability-checking functions used by load_settings
+static bool is_quadrant_supported(uint8_t type);
+static bool clamp_quadrants(void);
+
+// Loads settings from persistent storage, falling back to defaults if missing or version-mismatched.
+// Also clamps unsupported quadrant types to 0 after loading.
 static void load_settings(void) {
   if (persist_exists(SETTINGS_KEY)) {
     persist_read_data(SETTINGS_KEY, &s_settings, sizeof(Settings));
@@ -180,16 +191,60 @@ static void load_settings(void) {
     mark_settings_dirty();
     save_settings();
   }
+  if (clamp_quadrants()) mark_settings_dirty();
+}
+
+// Probes the platform at runtime to determine which Health-service features are available.
+// Steps require the HealthService. HR requires an actual HR sensor (Pebble 2 / Time 2).
+// On Aplite (no PBL_HEALTH) this entire function is a no-op — s_capabilities stays 0,
+// so steps and HR get clamped to Off and hidden from the config page.
+// Note: we check for NotSupported (hardware absence) rather than Available (data presence)
+// because at boot the HealthService may not have data collected yet.
+static void init_capabilities(void) {
+#ifdef PBL_HEALTH
+  HealthServiceAccessibilityMask mask = health_service_metric_accessible(
+    HealthMetricStepCount, time_start_of_today(), time(NULL));
+  if (!(mask & HealthServiceAccessibilityMaskNotSupported)) {
+    s_capabilities |= CAP_STEPS;
+  }
+  mask = health_service_metric_accessible(
+    HealthMetricHeartRateBPM, time_start_of_today(), time(NULL));
+  if (!(mask & HealthServiceAccessibilityMaskNotSupported)) {
+    s_capabilities |= CAP_HR;
+  }
+#endif
+}
+
+// Returns true if the given quadrant type is usable on this platform.
+static bool is_quadrant_supported(uint8_t type) {
+  switch (type) {
+    case 2: return s_capabilities & CAP_STEPS;
+    case 3: return s_capabilities & CAP_HR;
+    default: return true; // 0 (off), 1 (battery), 4-6 (weather) are always supported
+  }
+}
+
+// Clamps any quadrant in current settings to 0 (off) if the type is unsupported.
+// Returns true if any quadrant was changed.
+static bool clamp_quadrants(void) {
+  bool changed = false;
+  if (!is_quadrant_supported(s_settings.quad_tl)) { s_settings.quad_tl = 0; changed = true; }
+  if (!is_quadrant_supported(s_settings.quad_tr)) { s_settings.quad_tr = 0; changed = true; }
+  if (!is_quadrant_supported(s_settings.quad_bl)) { s_settings.quad_bl = 0; changed = true; }
+  if (!is_quadrant_supported(s_settings.quad_br)) { s_settings.quad_br = 0; changed = true; }
+  return changed;
 }
 
 
 // Sends the full settings blob to the JavaScript companion.
 // If include_weather is true, also requests a fresh weather fetch.
+// Also sends the platform capability bitmask so the JS config page can hide unsupported options.
 static void send_settings_with_blob(bool include_weather) {
   DictionaryIterator *iter;
   if (app_message_outbox_begin(&iter) != APP_MSG_OK) return;
   dict_write_uint8(iter, KEY_REQUEST_SETTINGS, 1);
   dict_write_data(iter, KEY_SETTINGS_BLOB, (const uint8_t *)&s_settings, sizeof(Settings));
+  dict_write_uint8(iter, KEY_CAPABILITIES, s_capabilities);
   if (include_weather) {
     dict_write_uint8(iter, KEY_REQUEST_WEATHER, 1);
   }
@@ -694,6 +749,9 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     mark_settings_dirty();
   }
 
+  // Clamp unsupported quadrant types (e.g., HR on a watch without HR sensor)
+  if (clamp_quadrants()) mark_settings_dirty();
+
   // If JS requests a resend, send our current settings back
   t = dict_find(iter, KEY_REQUEST_RESEND);
   if (t) {
@@ -745,6 +803,7 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_bt_layer, bt_layer_update);
   layer_add_child(window_layer, s_bt_layer);
 
+  init_capabilities();
   load_settings();
   check_update_night();
   update_health();
