@@ -1,3 +1,5 @@
+// Converts a hex color string (e.g. "#FF0000") to a Pebble GColor8 byte.
+// GColor8 uses 2 bits per channel (0-3) with the top 2 bits set (0b11xxxxxx).
 function hexToGColor8(hex) {
   var r = Math.round((parseInt(hex.substring(1,3), 16) / 255) * 3) & 3;
   var g = Math.round((parseInt(hex.substring(3,5), 16) / 255) * 3) & 3;
@@ -5,6 +7,8 @@ function hexToGColor8(hex) {
   return (0b11 << 6) | (r << 4) | (g << 2) | b;
 }
 
+// Converts a GColor8 ARGB byte back to a hex color string (e.g. "#C0C0C0").
+// Extracts 2-bit channels and multiplies by 85 to scale to 0-255.
 function gcolorToHex(argb) {
   var r = Math.round(((argb >> 4) & 3) * 85);
   var g = Math.round(((argb >> 2) & 3) * 85);
@@ -14,6 +18,8 @@ function gcolorToHex(argb) {
   }).join('');
 }
 
+// Generates HTML for all 64 Pebble GColor8 color swatches.
+// Each swatch stores its GColor8 value and a "xor" preview color (inverted) for the selection marker.
 var COLOR_SWATCHES = (function() {
   var h = '';
   for (var ci = 0; ci < 64; ci++) {
@@ -27,6 +33,8 @@ var COLOR_SWATCHES = (function() {
   return h;
 })();
 
+// Full HTML page for the Pebble configuration window.
+// Injected with initial config values and opened via Pebble.openURL().
 var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">' +
 '<title>Pebble Junkies</title>' +
@@ -144,19 +152,25 @@ var CONFIG_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
 'document.location="pebblejs://close#"+encodeURIComponent(JSON.stringify(config))}' +
 'window.onload=load<\/script></body></html>';
 
+// In-memory cache of the most recent settings received from the watchface.
+// Used to pre-populate the config page so the user sees their current values.
 var cachedSettings = {};
 
+// Tracks the device's current location (lat/lon) for weather API calls
 var locationData = {
   lat: null,
   lon: null,
   name: ''
 };
 
+// Sends an error message (key 9) to the watchface for display
 function sendError(msg) {
   var d = {}; d['9'] = msg;
   Pebble.sendAppMessage(d);
 }
 
+// Fetches weather data from Open-Meteo API (free, no key required) and sends it to the watchface.
+// lat/lon are decimal degrees. Sends temperature, high/low, condition code, precipitation, sunrise/sunset.
 function fetchWeatherFromAPI(lat, lon) {
   var url = 'https://api.open-meteo.com/v1/forecast?' +
     'latitude=' + lat + '&longitude=' + lon +
@@ -203,6 +217,7 @@ function fetchWeatherFromAPI(lat, lon) {
   req.send();
 }
 
+// Fetches weather using the stored lat/lon, or falls back to a London default
 function fetchWeatherWithLocation() {
   if (locationData.lat !== null && locationData.lon !== null) {
     fetchWeatherFromAPI(locationData.lat, locationData.lon);
@@ -214,6 +229,7 @@ function fetchWeatherWithLocation() {
   fetchWeatherFromAPI(locationData.lat, locationData.lon);
 }
 
+// Requests the device's GPS position, then fetches weather. Falls back to default on failure.
 function requestLocationAndFetch() {
   navigator.geolocation.getCurrentPosition(
     function(pos) {
@@ -228,6 +244,7 @@ function requestLocationAndFetch() {
   );
 }
 
+// Geocodes a city name to lat/lon using the Open-Meteo Geocoding API, then calls the callback.
 function geocodeCity(city, callback) {
   var url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1&language=en&format=json';
   var req = new XMLHttpRequest();
@@ -250,6 +267,9 @@ function geocodeCity(city, callback) {
   req.send();
 }
 
+// Opens the configuration page when the user requests it from the Pebble mobile app.
+// If cached settings exist, pre-populates the page. Otherwise requests settings from the watchface
+// and waits up to 3 seconds before falling back to defaults.
 Pebble.addEventListener('showConfiguration', function(e) {
   if (Object.keys(cachedSettings).length > 0) {
     var configJson = JSON.stringify(cachedSettings);
@@ -273,6 +293,8 @@ Pebble.addEventListener('showConfiguration', function(e) {
   }
 });
 
+// Encodes the settings object into a packed byte array matching the C-side Settings struct.
+// Order of fields must match the struct definition exactly.
 function encodeSettings(config) {
   var buf = [];
   buf.push(3); // version
@@ -302,6 +324,8 @@ function encodeSettings(config) {
   return buf;
 }
 
+// Decodes a packed byte array (from the C-side Settings blob) back into a JS settings object.
+// Inverse of encodeSettings — must agree on field order and sizes.
 function decodeSettings(buf) {
   var cfg = {}, pos = 0;
   cfg.version = buf[pos++];
@@ -331,7 +355,10 @@ function decodeSettings(buf) {
   return cfg;
 }
 
-    Pebble.addEventListener('webviewclosed', function(e) {
+// Called when the configuration page is closed. Parses the returned JSON config,
+// Called when the configuration page is closed. Parses the returned JSON config,
+// caches it, sends quadrant and settings blob to the watchface, and triggers weather fetch.
+Pebble.addEventListener('webviewclosed', function(e) {
   var response = e.response;
   if (response && response.length > 0) {
     var config;
@@ -371,8 +398,11 @@ function decodeSettings(buf) {
   }
 });
 
+// Handles incoming messages from the watchface: parses settings blobs, triggers weather,
+// and responds to settings requests.
 Pebble.addEventListener('appmessage', function(e) {
   if (e.payload) {
+    // Receive and decode full settings blob from the watchface
     if (e.payload.settingsBlob !== undefined) {
       var raw = e.payload.settingsBlob;
       var buf = [];
@@ -387,6 +417,7 @@ Pebble.addEventListener('appmessage', function(e) {
         cachedSettings[k] = cfg[k];
       }
     }
+    // Weather fetch requested by the watchface tick
     if (e.payload.requestWeather !== undefined) {
       if (locationData.lat !== null && locationData.lon !== null) {
         fetchWeatherFromAPI(locationData.lat, locationData.lon);
@@ -394,6 +425,7 @@ Pebble.addEventListener('appmessage', function(e) {
         requestLocationAndFetch();
       }
     }
+    // Watchface requesting current settings (e.g., after boot or config open)
     if (e.payload.requestSettings !== undefined) {
       if (Object.keys(cachedSettings).length > 0) {
         var qd = {};
